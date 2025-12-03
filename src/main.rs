@@ -55,6 +55,10 @@ struct Task {
     priority: Option<String>,
     created: Option<String>,
     timestamp: Option<String>,
+    timestamp_type: Option<String>,
+    timestamp_date: Option<String>,
+    timestamp_time: Option<String>,
+    timestamp_end_time: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,7 +214,7 @@ fn get_current_week(tz: &Tz) -> (NaiveDate, NaiveDate) {
 
 fn task_matches_date(task: &Task, target_date: &NaiveDate) -> bool {
     if let Some(ref ts) = task.timestamp {
-        if let Some(parsed) = parse_org_timestamp(ts) {
+        if let Some(parsed) = parse_org_timestamp(ts, None) {
             return timestamp_matches_date(&parsed, target_date);
         }
     }
@@ -219,7 +223,7 @@ fn task_matches_date(task: &Task, target_date: &NaiveDate) -> bool {
 
 fn task_in_range(task: &Task, start: &NaiveDate, end: &NaiveDate) -> bool {
     if let Some(ref ts) = task.timestamp {
-        if let Some(parsed) = parse_org_timestamp(ts) {
+        if let Some(parsed) = parse_org_timestamp(ts, None) {
             return timestamp_in_range(&parsed, start, end);
         }
     }
@@ -338,7 +342,14 @@ fn extract_date_from_timestamp(ts: &str) -> Option<NaiveDate> {
         .and_then(|caps| NaiveDate::parse_from_str(&caps[1], "%Y-%m-%d").ok())
 }
 
-fn parse_org_timestamp(ts: &str) -> Option<ParsedTimestamp> {
+fn parse_org_timestamp(ts: &str, mappings: Option<&[(&str, &str)]>) -> Option<ParsedTimestamp> {
+    let ts = if let Some(m) = mappings {
+        normalize_weekdays(ts, m)
+    } else {
+        ts.to_string()
+    };
+    let ts = ts.as_str();
+    
     // Determine timestamp type
     let timestamp_type = if ts.contains("SCHEDULED:") {
         TimestampType::Scheduled
@@ -462,6 +473,11 @@ fn process_top_level_node<'a>(
                 let (created, timestamp) = extract_timestamps_from_node(node, mappings);
                 if created.is_some() || timestamp.is_some() {
                     let content = extract_paragraph_text(node);
+                    let (ts_type, ts_date, ts_time, ts_end_time) = if let Some(ref ts) = timestamp {
+                        parse_timestamp_fields(ts, mappings)
+                    } else {
+                        (None, None, None, None)
+                    };
                     tasks.push(Task {
                         file: path.display().to_string(),
                         line: *line,
@@ -471,6 +487,10 @@ fn process_top_level_node<'a>(
                         priority: priority.clone(),
                         created,
                         timestamp,
+                        timestamp_type: ts_type,
+                        timestamp_date: ts_date,
+                        timestamp_time: ts_time,
+                        timestamp_end_time: ts_end_time,
                     });
                     *current_heading = None;
                 }
@@ -503,6 +523,10 @@ fn process_top_level_node<'a>(
                     priority: priority.clone(),
                     created: None,
                     timestamp: None,
+                    timestamp_type: None,
+                    timestamp_date: None,
+                    timestamp_time: None,
+                    timestamp_end_time: None,
                 });
                 *current_heading = None;
             }
@@ -519,6 +543,26 @@ fn parse_heading(text: &str) -> (Option<String>, Option<String>, String) {
         (task_type, priority, heading)
     } else {
         (None, None, text.to_string())
+    }
+}
+
+fn parse_timestamp_fields(timestamp: &str, mappings: &[(&str, &str)]) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+    if let Some(parsed) = parse_org_timestamp(timestamp, Some(mappings)) {
+        let ts_type = match parsed.timestamp_type {
+            TimestampType::Scheduled => "SCHEDULED",
+            TimestampType::Deadline => "DEADLINE",
+            TimestampType::Closed => "CLOSED",
+            TimestampType::Plain => "PLAIN",
+        };
+        let ts_date = parsed.date.format("%Y-%m-%d").to_string();
+        (
+            Some(ts_type.to_string()),
+            Some(ts_date),
+            parsed.time,
+            parsed.end_time,
+        )
+    } else {
+        (None, None, None, None)
     }
 }
 
@@ -734,7 +778,7 @@ mod tests {
     #[test]
     fn test_parse_deadline_with_warning() {
         let ts = "DEADLINE: <2024-12-15 Sun -7d>";
-        let parsed = parse_org_timestamp(ts).unwrap();
+        let parsed = parse_org_timestamp(ts, None).unwrap();
         assert_eq!(parsed.timestamp_type, TimestampType::Deadline);
         assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2024, 12, 15).unwrap());
         assert_eq!(parsed.warning.unwrap().days, 7);
@@ -743,7 +787,7 @@ mod tests {
     #[test]
     fn test_parse_scheduled_with_repeater() {
         let ts = "SCHEDULED: <2024-12-01 Mon +1w>";
-        let parsed = parse_org_timestamp(ts).unwrap();
+        let parsed = parse_org_timestamp(ts, None).unwrap();
         assert_eq!(parsed.timestamp_type, TimestampType::Scheduled);
         assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2024, 12, 1).unwrap());
         assert!(parsed.repeater.is_some());
@@ -754,7 +798,7 @@ mod tests {
     #[test]
     fn test_parse_date_range() {
         let ts = "<2024-12-20 Fri>--<2024-12-22 Sun>";
-        let parsed = parse_org_timestamp(ts).unwrap();
+        let parsed = parse_org_timestamp(ts, None).unwrap();
         assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2024, 12, 20).unwrap());
         assert_eq!(parsed.end_date, Some(NaiveDate::from_ymd_opt(2024, 12, 22).unwrap()));
     }
@@ -762,7 +806,7 @@ mod tests {
     #[test]
     fn test_parse_timestamp_with_time() {
         let ts = "<2024-12-05 Wed 10:00-12:00>";
-        let parsed = parse_org_timestamp(ts).unwrap();
+        let parsed = parse_org_timestamp(ts, None).unwrap();
         assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2024, 12, 5).unwrap());
         assert_eq!(parsed.time, Some("10:00".to_string()));
         assert_eq!(parsed.end_time, Some("12:00".to_string()));
@@ -928,5 +972,35 @@ mod tests {
         assert!(timestamp_matches_date(&parsed, &NaiveDate::from_ymd_opt(2024, 12, 10).unwrap()));
         assert!(!timestamp_matches_date(&parsed, &NaiveDate::from_ymd_opt(2024, 12, 9).unwrap()));
         assert!(!timestamp_matches_date(&parsed, &NaiveDate::from_ymd_opt(2024, 12, 11).unwrap()));
+    }
+
+    #[test]
+    fn test_parse_timestamp_fields_scheduled() {
+        let mappings = vec![];
+        let (ts_type, ts_date, ts_time, ts_end_time) = parse_timestamp_fields("SCHEDULED: <2024-12-10 Tue 14:30>", &mappings);
+        assert_eq!(ts_type, Some("SCHEDULED".to_string()));
+        assert_eq!(ts_date, Some("2024-12-10".to_string()));
+        assert_eq!(ts_time, Some("14:30".to_string()));
+        assert_eq!(ts_end_time, None);
+    }
+
+    #[test]
+    fn test_parse_timestamp_fields_with_time_range() {
+        let mappings = vec![];
+        let (ts_type, ts_date, ts_time, ts_end_time) = parse_timestamp_fields("<2024-12-04 Mon 10:00-11:00>", &mappings);
+        assert_eq!(ts_type, Some("PLAIN".to_string()));
+        assert_eq!(ts_date, Some("2024-12-04".to_string()));
+        assert_eq!(ts_time, Some("10:00".to_string()));
+        assert_eq!(ts_end_time, Some("11:00".to_string()));
+    }
+
+    #[test]
+    fn test_parse_timestamp_fields_deadline() {
+        let mappings = vec![];
+        let (ts_type, ts_date, ts_time, ts_end_time) = parse_timestamp_fields("DEADLINE: <2025-12-10 Wed -3d>", &mappings);
+        assert_eq!(ts_type, Some("DEADLINE".to_string()));
+        assert_eq!(ts_date, Some("2025-12-10".to_string()));
+        assert_eq!(ts_time, None);
+        assert_eq!(ts_end_time, None);
     }
 }

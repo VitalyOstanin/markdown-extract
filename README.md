@@ -314,10 +314,25 @@ markdown-extract --agenda day --tz America/New_York
     "task_type": "TODO",
     "priority": "A",
     "created": "CREATED: <2024-12-01 Mon>",
-    "timestamp": "DEADLINE: <2024-12-15 Sun>"
+    "timestamp": "DEADLINE: <2024-12-15 Sun>",
+    "timestamp_type": "DEADLINE",
+    "timestamp_date": "2024-12-15",
+    "timestamp_time": null,
+    "timestamp_end_time": null
   }
 ]
 ```
+
+#### Поля разобранных временных меток
+
+Для удобства отрисовки agenda внешними потребителями, временные метки автоматически разбираются на составные части:
+
+- `timestamp_type` - тип временной метки: `SCHEDULED`, `DEADLINE`, `CLOSED`, `PLAIN`
+- `timestamp_date` - дата в формате `YYYY-MM-DD`
+- `timestamp_time` - время начала (если указано), например `10:00`
+- `timestamp_end_time` - время окончания (если указан диапазон), например `12:00`
+
+Эти поля позволяют внешним системам отображать задачи на временной шкале без повторного парсинга строки `timestamp`.
 
 ### Markdown
 
