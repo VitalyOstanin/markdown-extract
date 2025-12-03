@@ -1,3 +1,5 @@
+use chrono::{Datelike, NaiveDate, TimeZone};
+use chrono_tz::Tz;
 use clap::Parser;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{parse_document, Arena, Options};
@@ -26,6 +28,21 @@ struct Cli {
 
     #[arg(long, default_value = "ru,en")]
     locale: String,
+
+    #[arg(long, default_value = "day")]
+    agenda: String,
+
+    #[arg(long)]
+    date: Option<String>,
+
+    #[arg(long)]
+    from: Option<String>,
+
+    #[arg(long)]
+    to: Option<String>,
+
+    #[arg(long, default_value = "Europe/Moscow")]
+    tz: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,6 +72,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    // Apply agenda filtering
+    tasks = filter_agenda(tasks, &cli)?;
 
     let output = match cli.format.as_str() {
         "json" => serde_json::to_string_pretty(&tasks)?,
@@ -97,6 +117,83 @@ fn get_weekday_mappings(locale: &str) -> Vec<(&'static str, &'static str)> {
     }
     mappings
 }
+
+fn filter_agenda(mut tasks: Vec<Task>, cli: &Cli) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
+    let tz: Tz = cli.tz.parse()?;
+    
+    match cli.agenda.as_str() {
+        "day" => {
+            let target_date = if let Some(ref date_str) = cli.date {
+                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")?
+            } else {
+                tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive()
+            };
+            tasks.retain(|t| task_matches_date(t, &target_date));
+        }
+        "week" => {
+            let (start_date, end_date) = if let (Some(from), Some(to)) = (&cli.from, &cli.to) {
+                (
+                    NaiveDate::parse_from_str(from, "%Y-%m-%d")?,
+                    NaiveDate::parse_from_str(to, "%Y-%m-%d")?,
+                )
+            } else {
+                get_current_week(&tz)
+            };
+            tasks.retain(|t| task_in_range(t, &start_date, &end_date));
+        }
+        "tasks" => {
+            tasks.retain(|t| t.task_type.as_deref() == Some("TODO"));
+            tasks.sort_by(|a, b| {
+                let priority_order = |p: &Option<String>| match p.as_deref() {
+                    Some("A") => 0,
+                    Some("B") => 1,
+                    Some("C") => 2,
+                    Some(x) if x.len() == 1 => (x.chars().next().unwrap() as u32) - ('A' as u32),
+                    _ => 999,
+                };
+                priority_order(&a.priority).cmp(&priority_order(&b.priority))
+            });
+        }
+        _ => return Err("Invalid agenda mode. Use: day, week, tasks".into()),
+    }
+    Ok(tasks)
+}
+
+fn get_current_week(tz: &Tz) -> (NaiveDate, NaiveDate) {
+    let today = tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive();
+    let weekday = today.weekday();
+    let days_from_monday = weekday.num_days_from_monday();
+    let monday = today - chrono::Duration::days(days_from_monday as i64);
+    let sunday = monday + chrono::Duration::days(6);
+    (monday, sunday)
+}
+
+fn task_matches_date(task: &Task, target_date: &NaiveDate) -> bool {
+    if let Some(ref ts) = task.timestamp {
+        extract_date_from_timestamp(ts)
+            .map(|d| d == *target_date)
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
+fn task_in_range(task: &Task, start: &NaiveDate, end: &NaiveDate) -> bool {
+    if let Some(ref ts) = task.timestamp {
+        extract_date_from_timestamp(ts)
+            .map(|d| d >= *start && d <= *end)
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
+fn extract_date_from_timestamp(ts: &str) -> Option<NaiveDate> {
+    let re = Regex::new(r"(\d{4}-\d{2}-\d{2})").unwrap();
+    re.captures(ts)
+        .and_then(|caps| NaiveDate::parse_from_str(&caps[1], "%Y-%m-%d").ok())
+}
+
 
 fn normalize_weekdays(text: &str, mappings: &[(&str, &str)]) -> String {
     let mut result = text.to_string();

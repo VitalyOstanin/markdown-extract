@@ -73,6 +73,11 @@ markdown-extract [OPTIONS]
 - `--format <FORMAT>` - формат вывода: `json`, `md`, `html` (по умолчанию: `json`)
 - `--output <OUTPUT>` - файл для записи результата (по умолчанию: stdout)
 - `--locale <LOCALE>` - локали для дней недели через запятую (по умолчанию: `ru,en`)
+- `--agenda <MODE>` - режим agenda: `day`, `week`, `tasks` (по умолчанию: `day`)
+- `--date <DATE>` - дата для режима `day` в формате YYYY-MM-DD (по умолчанию: текущая дата)
+- `--from <DATE>` - начальная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: понедельник текущей недели)
+- `--to <DATE>` - конечная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: воскресенье текущей недели)
+- `--tz <TIMEZONE>` - часовой пояс для определения текущей даты (по умолчанию: `Europe/Moscow`)
 
 ### Примеры использования
 
@@ -113,6 +118,39 @@ markdown-extract --dir ./notes --locale ru
 markdown-extract --dir ./notes --locale en
 ```
 
+#### Примеры работы с agenda
+
+Задачи на сегодня (по умолчанию):
+```bash
+markdown-extract --dir ./notes
+```
+
+Задачи на конкретную дату:
+```bash
+markdown-extract --dir ./notes --agenda day --date 2025-12-10
+```
+
+Задачи на текущую неделю:
+```bash
+markdown-extract --dir ./notes --agenda week
+```
+
+Задачи на диапазон дат:
+```bash
+markdown-extract --dir ./notes --agenda week --from 2025-12-01 --to 2025-12-07
+```
+
+Все TODO задачи, отсортированные по приоритету:
+```bash
+markdown-extract --dir ./notes --agenda tasks
+```
+
+Использовать другой часовой пояс:
+```bash
+markdown-extract --dir ./notes --tz UTC
+markdown-extract --dir ./notes --tz America/New_York
+```
+
 ## Примеры файлов
 
 В каталоге `examples/` находятся примеры markdown файлов с различными метками:
@@ -124,6 +162,58 @@ markdown-extract --dir ./notes --locale en
 Попробуйте запустить:
 ```bash
 ./target/release/markdown-extract --dir ./examples --format md
+```
+
+## Режимы Agenda
+
+Утилита поддерживает три режима работы с задачами, аналогично Emacs Org-mode:
+
+### day - Задачи на день
+
+Показывает задачи с временными метками (SCHEDULED, DEADLINE) на указанную дату. По умолчанию используется текущая дата в указанной таймзоне.
+
+```bash
+# Задачи на сегодня
+markdown-extract --agenda day
+
+# Задачи на конкретную дату
+markdown-extract --agenda day --date 2025-12-10
+```
+
+### week - Задачи на неделю
+
+Показывает задачи с временными метками в диапазоне дат. По умолчанию используется текущая неделя (понедельник-воскресенье).
+
+```bash
+# Задачи на текущую неделю
+markdown-extract --agenda week
+
+# Задачи на конкретный диапазон
+markdown-extract --agenda week --from 2025-12-01 --to 2025-12-07
+```
+
+### tasks - Все TODO задачи
+
+Показывает все задачи со статусом TODO, отсортированные по приоритету (A → B → C → без приоритета). Временные метки не учитываются.
+
+```bash
+# Все TODO задачи по приоритетам
+markdown-extract --agenda tasks
+```
+
+### Часовые пояса
+
+Параметр `--tz` определяет часовой пояс для вычисления текущей даты и недели. Поддерживаются все стандартные IANA таймзоны.
+
+```bash
+# Московское время (по умолчанию)
+markdown-extract --agenda day --tz Europe/Moscow
+
+# UTC
+markdown-extract --agenda day --tz UTC
+
+# Нью-Йорк
+markdown-extract --agenda day --tz America/New_York
 ```
 
 ## Поддерживаемые метки
