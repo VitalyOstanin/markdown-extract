@@ -1,5 +1,10 @@
 # Org-mode Timestamp Tests
 
+### TODO [#A] Daily standup
+`SCHEDULED: <2024-12-01 Sun 10:30-11:00 +1d>`
+
+Repeats every day for testing.
+
 ### TODO [#A] Deadline with warning
 `DEADLINE: <2025-12-10 Wed -3d>`
 
