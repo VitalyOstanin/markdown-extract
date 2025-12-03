@@ -166,6 +166,7 @@ markdown-extract --dir ./notes --locale en
 
 **Метки планирования:**
 ```markdown
+`CREATED: <2024-12-01 Mon>`
 `DEADLINE: <2024-12-15 Sun>`
 `SCHEDULED: <2024-12-05 Wed>`
 `CLOSED: <2024-12-01 Mon>`
@@ -180,6 +181,8 @@ markdown-extract --dir ./notes --locale en
 ```markdown
 `[2024-12-10 Mon]` - квадратные скобки означают неактивную метку
 ```
+
+**Примечание:** Метка `CREATED` извлекается отдельно от других временных меток и сохраняется в поле `created`. Это позволяет отслеживать дату создания задачи независимо от других временных меток (SCHEDULED, DEADLINE, CLOSED).
 
 ## Поддержка локалей
 
@@ -220,6 +223,7 @@ markdown-extract --dir ./notes --locale en
     "content": "Task description",
     "task_type": "TODO",
     "priority": "A",
+    "created": "CREATED: <2024-12-01 Mon>",
     "timestamp": "DEADLINE: <2024-12-15 Sun>"
   }
 ]
@@ -234,6 +238,7 @@ markdown-extract --dir ./notes --locale en
 **File:** /path/to/file.md:42
 **Type:** TODO
 **Priority:** [#A]
+**Created:** CREATED: <2024-12-01 Mon>
 **Time:** DEADLINE: <2024-12-15 Sun>
 
 Task description
@@ -247,6 +252,7 @@ Task description
 <p><strong>File:</strong> /path/to/file.md:42</p>
 <p><strong>Type:</strong> TODO</p>
 <p><strong>Priority:</strong> [#A]</p>
+<p><strong>Created:</strong> CREATED: <2024-12-01 Mon></p>
 <p><strong>Time:</strong> DEADLINE: <2024-12-15 Sun></p>
 <p>Task description</p>
 </body></html>

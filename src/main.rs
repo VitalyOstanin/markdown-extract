@@ -36,6 +36,7 @@ struct Task {
     content: String,
     task_type: Option<String>,
     priority: Option<String>,
+    created: Option<String>,
     timestamp: Option<String>,
 }
 
@@ -145,7 +146,8 @@ fn process_top_level_node<'a>(
         }
         NodeValue::Paragraph => {
             if let Some((heading, task_type, priority, line)) = current_heading {
-                if let Some(timestamp) = extract_timestamp_from_node(node, mappings) {
+                let (created, timestamp) = extract_timestamps_from_node(node, mappings);
+                if created.is_some() || timestamp.is_some() {
                     let content = extract_paragraph_text(node);
                     tasks.push(Task {
                         file: path.display().to_string(),
@@ -154,7 +156,8 @@ fn process_top_level_node<'a>(
                         content,
                         task_type: task_type.clone(),
                         priority: priority.clone(),
-                        timestamp: Some(timestamp),
+                        created,
+                        timestamp,
                     });
                     *current_heading = None;
                 }
@@ -170,7 +173,8 @@ fn process_top_level_node<'a>(
             let mut has_timestamp = false;
             if let Some(next) = node.next_sibling() {
                 if let NodeValue::Paragraph = &next.data.borrow().value {
-                    if extract_timestamp_from_node(next, mappings).is_some() {
+                    let (created, timestamp) = extract_timestamps_from_node(next, mappings);
+                    if created.is_some() || timestamp.is_some() {
                         has_timestamp = true;
                     }
                 }
@@ -184,6 +188,7 @@ fn process_top_level_node<'a>(
                     content: String::new(),
                     task_type: Some(task_type.clone()),
                     priority: priority.clone(),
+                    created: None,
                     timestamp: None,
                 });
                 *current_heading = None;
@@ -204,20 +209,23 @@ fn parse_heading(text: &str) -> (Option<String>, Option<String>, String) {
     }
 }
 
-fn extract_timestamp_from_node<'a>(node: &'a AstNode<'a>, mappings: &[(&str, &str)]) -> Option<String> {
-    match &node.data.borrow().value {
-        NodeValue::Paragraph => {
-            for child in node.children() {
-                if let NodeValue::Code(code) = &child.data.borrow().value {
-                    if let Some(ts) = extract_timestamp(&code.literal, mappings) {
-                        return Some(ts);
-                    }
+fn extract_timestamps_from_node<'a>(node: &'a AstNode<'a>, mappings: &[(&str, &str)]) -> (Option<String>, Option<String>) {
+    let mut created = None;
+    let mut timestamp = None;
+    
+    if let NodeValue::Paragraph = &node.data.borrow().value {
+        for child in node.children() {
+            if let NodeValue::Code(code) = &child.data.borrow().value {
+                if created.is_none() {
+                    created = extract_created(&code.literal, mappings);
+                }
+                if timestamp.is_none() {
+                    timestamp = extract_timestamp(&code.literal, mappings);
                 }
             }
-            None
         }
-        _ => None
     }
+    (created, timestamp)
 }
 
 fn extract_paragraph_text<'a>(node: &'a AstNode<'a>) -> String {
@@ -279,6 +287,17 @@ fn extract_timestamp(text: &str, mappings: &[(&str, &str)]) -> Option<String> {
     None
 }
 
+fn extract_created(text: &str, mappings: &[(&str, &str)]) -> Option<String> {
+    let normalized = normalize_weekdays(text, mappings);
+    let clean_text = normalized.trim().trim_matches('`').trim();
+    
+    let re = Regex::new(r"^\s*CREATED:\s*<(\d{4}-\d{2}-\d{2}[^>]*)>").unwrap();
+    if let Some(caps) = re.captures(clean_text) {
+        return Some(format!("CREATED: <{}>", &caps[1]));
+    }
+    None
+}
+
 fn render_markdown(tasks: &[Task]) -> String {
     let mut output = String::from("# Tasks\n\n");
     for task in tasks {
@@ -289,6 +308,9 @@ fn render_markdown(tasks: &[Task]) -> String {
         }
         if let Some(ref p) = task.priority {
             output.push_str(&format!("**Priority:** [#{}]\n", p));
+        }
+        if let Some(ref c) = task.created {
+            output.push_str(&format!("**Created:** {}\n", c));
         }
         if let Some(ref ts) = task.timestamp {
             output.push_str(&format!("**Time:** {}\n", ts));
@@ -308,6 +330,9 @@ fn render_html(tasks: &[Task]) -> String {
         }
         if let Some(ref p) = task.priority {
             output.push_str(&format!("<p><strong>Priority:</strong> [#{}]</p>\n", p));
+        }
+        if let Some(ref c) = task.created {
+            output.push_str(&format!("<p><strong>Created:</strong> {}</p>\n", c));
         }
         if let Some(ref ts) = task.timestamp {
             output.push_str(&format!("<p><strong>Time:</strong> {}</p>\n", ts));
@@ -362,5 +387,33 @@ mod tests {
             assert_eq!(task_type, Some("TODO".to_string()));
             assert_eq!(priority, Some(letter.to_string()));
         }
+    }
+
+    #[test]
+    fn test_extract_created() {
+        let mappings = vec![];
+        let result = extract_created("`CREATED: <2024-12-01 Mon>`", &mappings);
+        assert_eq!(result, Some("CREATED: <2024-12-01 Mon>".to_string()));
+    }
+
+    #[test]
+    fn test_extract_created_with_time() {
+        let mappings = vec![];
+        let result = extract_created("`CREATED: <2024-12-01 Mon 10:30>`", &mappings);
+        assert_eq!(result, Some("CREATED: <2024-12-01 Mon 10:30>".to_string()));
+    }
+
+    #[test]
+    fn test_extract_created_russian_weekday() {
+        let mappings = vec![("Пн", "Mon")];
+        let result = extract_created("`CREATED: <2024-12-01 Пн>`", &mappings);
+        assert_eq!(result, Some("CREATED: <2024-12-01 Mon>".to_string()));
+    }
+
+    #[test]
+    fn test_extract_created_not_created() {
+        let mappings = vec![];
+        let result = extract_created("`DEADLINE: <2024-12-01 Mon>`", &mappings);
+        assert_eq!(result, None);
     }
 }
