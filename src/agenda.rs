@@ -24,16 +24,17 @@ pub fn filter_agenda(
         .parse()
         .map_err(|_| format!("Invalid timezone: {tz}. Use IANA timezone names (e.g., 'Europe/Moscow', 'UTC')"))?;
 
+    let today = tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive();
+
     match mode {
         "day" => {
             let target_date = if let Some(date_str) = date {
                 NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                     .map_err(|e| format!("Invalid date format '{date_str}': {e}. Use YYYY-MM-DD"))?
             } else {
-                tz.from_utc_datetime(&chrono::Utc::now().naive_utc())
-                    .date_naive()
+                today
             };
-            Ok(AgendaOutput::Days(vec![build_day_agenda(tasks, target_date)]))
+            Ok(AgendaOutput::Days(vec![build_day_agenda(tasks, target_date, target_date)]))
         }
         "week" => {
             let (start_date, end_date) = if let (Some(from_str), Some(to_str)) = (from, to) {
@@ -50,7 +51,13 @@ pub fn filter_agenda(
             } else {
                 get_current_week(&tz)
             };
-            Ok(AgendaOutput::Days(build_week_agenda(tasks, start_date, end_date)))
+            
+            // Use --date if specified, otherwise use start_date of the range
+            let reference_date = date
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .unwrap_or(start_date);
+            
+            Ok(AgendaOutput::Days(build_week_agenda(tasks, start_date, end_date, reference_date)))
         }
         "tasks" => {
             let mut filtered: Vec<Task> = tasks
@@ -65,24 +72,35 @@ pub fn filter_agenda(
 }
 
 /// Build agenda for a single day
-fn build_day_agenda(tasks: Vec<Task>, target_date: NaiveDate) -> DayAgenda {
-    let mut agenda = DayAgenda::new(target_date);
+fn build_day_agenda(tasks: Vec<Task>, day_date: NaiveDate, reference_date: NaiveDate) -> DayAgenda {
+    let mut agenda = DayAgenda::new(day_date);
     
     for task in tasks {
         if let Some(ref ts) = task.timestamp {
             if let Some(parsed) = parse_org_timestamp(ts, None) {
                 let task_date = parsed.date;
-                let days_diff = (task_date - target_date).num_days();
                 
-                let task_with_offset = TaskWithOffset {
-                    task,
-                    days_offset: if days_diff != 0 { Some(days_diff) } else { None },
+                // For day mode (day_date == reference_date), show all tasks categorized by reference_date
+                // For week mode (day_date != reference_date), only show tasks scheduled for day_date
+                let should_include = if day_date == reference_date {
+                    true // day mode: include all tasks
+                } else {
+                    task_date == day_date // week mode: only tasks for this specific day
                 };
                 
-                match days_diff {
-                    0 => agenda.scheduled.push(task_with_offset),
-                    d if d > 0 => agenda.upcoming.push(task_with_offset),
-                    _ => agenda.overdue.push(task_with_offset),
+                if should_include {
+                    let days_diff = (task_date - reference_date).num_days();
+                    
+                    let task_with_offset = TaskWithOffset {
+                        task,
+                        days_offset: if days_diff != 0 { Some(days_diff) } else { None },
+                    };
+                    
+                    match days_diff {
+                        0 => agenda.scheduled.push(task_with_offset),
+                        d if d > 0 => agenda.upcoming.push(task_with_offset),
+                        _ => agenda.overdue.push(task_with_offset),
+                    }
                 }
             }
         }
@@ -103,13 +121,12 @@ fn build_day_agenda(tasks: Vec<Task>, target_date: NaiveDate) -> DayAgenda {
 }
 
 /// Build agenda for a week
-fn build_week_agenda(tasks: Vec<Task>, start_date: NaiveDate, end_date: NaiveDate) -> Vec<DayAgenda> {
-    // Build agenda for each day in range
+fn build_week_agenda(tasks: Vec<Task>, start_date: NaiveDate, end_date: NaiveDate, reference_date: NaiveDate) -> Vec<DayAgenda> {
     let mut result = Vec::new();
     let mut current = start_date;
     
     while current <= end_date {
-        result.push(build_day_agenda(tasks.clone(), current));
+        result.push(build_day_agenda(tasks.clone(), current, reference_date));
         current += chrono::Duration::days(1);
     }
     
