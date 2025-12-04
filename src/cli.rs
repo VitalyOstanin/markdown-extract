@@ -28,9 +28,13 @@ pub struct Cli {
     #[arg(long, default_value = "ru,en")]
     pub locale: String,
 
-    /// Agenda mode: day, week, tasks
-    #[arg(long, default_value = "day", value_parser = ["day", "week", "tasks"])]
+    /// Agenda mode: day, week
+    #[arg(long, default_value = "day", value_parser = ["day", "week"], conflicts_with = "tasks")]
     pub agenda: String,
+
+    /// Show all TODO tasks sorted by priority (alternative to --agenda tasks)
+    #[arg(long)]
+    pub tasks: bool,
 
     /// Date for 'day' mode (YYYY-MM-DD format)
     #[arg(long, value_parser = validate_date)]
@@ -47,6 +51,17 @@ pub struct Cli {
     /// Timezone for date calculations (IANA timezone, e.g., "Europe/Moscow")
     #[arg(long, default_value = "Europe/Moscow")]
     pub tz: String,
+}
+
+impl Cli {
+    /// Get effective agenda mode (handles --tasks flag)
+    pub fn get_agenda_mode(&self) -> &str {
+        if self.tasks {
+            "tasks"
+        } else {
+            &self.agenda
+        }
+    }
 }
 
 /// Validate date format (YYYY-MM-DD)

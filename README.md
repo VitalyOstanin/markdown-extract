@@ -73,7 +73,8 @@ markdown-extract [OPTIONS]
 - `--format <FORMAT>` - формат вывода: `json`, `md`, `html` (по умолчанию: `json`)
 - `--output <OUTPUT>` - файл для записи результата (по умолчанию: stdout)
 - `--locale <LOCALE>` - локали для дней недели через запятую (по умолчанию: `ru,en`)
-- `--agenda <MODE>` - режим agenda: `day`, `week`, `tasks` (по умолчанию: `day`)
+- `--agenda <MODE>` - режим agenda: `day`, `week` (по умолчанию: `day`)
+- `--tasks` - показать все TODO задачи, отсортированные по приоритету (альтернатива `--agenda tasks`)
 - `--date <DATE>` - дата для режима `day` в формате YYYY-MM-DD (по умолчанию: текущая дата)
 - `--from <DATE>` - начальная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: понедельник текущей недели)
 - `--to <DATE>` - конечная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: воскресенье текущей недели)
@@ -142,7 +143,7 @@ markdown-extract --dir ./notes --agenda week --from 2025-12-01 --to 2025-12-07
 
 Все TODO задачи, отсортированные по приоритету:
 ```bash
-markdown-extract --dir ./notes --agenda tasks
+markdown-extract --dir ./notes --tasks
 ```
 
 Использовать другой часовой пояс:
@@ -198,7 +199,7 @@ markdown-extract --agenda week --from 2025-12-01 --to 2025-12-07
 
 ```bash
 # Все TODO задачи по приоритетам
-markdown-extract --agenda tasks
+markdown-extract --tasks
 ```
 
 ### Часовые пояса

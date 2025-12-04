@@ -100,7 +100,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     tasks = filter_agenda(
         tasks,
-        &cli.agenda,
+        cli.get_agenda_mode(),
         cli.date.as_deref(),
         cli.from.as_deref(),
         cli.to.as_deref(),
