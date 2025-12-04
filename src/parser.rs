@@ -2,29 +2,47 @@ use comrak::nodes::{AstNode, NodeValue};
 use comrak::{parse_document, Arena, Options};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::timestamp::{extract_created, extract_timestamp, parse_timestamp_fields};
-use crate::types::{Priority, Task, TaskType};
+use crate::types::{Priority, Task, TaskType, MAX_TASKS};
 
+/// Regex for parsing task headings: TODO/DONE [#A] Task title
 static HEADING_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(TODO|DONE)\s+(?:\[#([A-Z])\]\s+)?(.+)$").unwrap()
+    Regex::new(r"^(TODO|DONE)\s+(?:\[#([A-Z])\]\s+)?(.+)$")
+        .expect("Invalid HEADING_RE regex")
 });
 
-pub fn extract_tasks(path: &PathBuf, content: &str, mappings: &[(&str, &str)]) -> Vec<Task> {
+/// Extract tasks from markdown content
+///
+/// # Arguments
+/// * `path` - Path to the markdown file
+/// * `content` - File content
+/// * `mappings` - Weekday name mappings for localization
+///
+/// # Returns
+/// Vector of extracted tasks (limited to MAX_TASKS)
+pub fn extract_tasks(path: &Path, content: &str, mappings: &[(&str, &str)]) -> Vec<Task> {
     let arena = Arena::new();
     let root = parse_document(&arena, content, &Options::default());
 
     let mut tasks = Vec::new();
     let mut current_heading: Option<HeadingInfo> = None;
-    
+
     for node in root.children() {
         process_node(node, path, &mut tasks, &mut current_heading, mappings);
+        
+        // Safety limit to prevent memory exhaustion
+        if tasks.len() >= MAX_TASKS {
+            eprintln!("Warning: Reached maximum task limit ({}) in {}", MAX_TASKS, path.display());
+            break;
+        }
     }
-    
+
     tasks
 }
 
+/// Information extracted from a heading
 struct HeadingInfo {
     heading: String,
     task_type: Option<TaskType>,
@@ -32,9 +50,10 @@ struct HeadingInfo {
     line: u32,
 }
 
+/// Process a single markdown node
 fn process_node<'a>(
     node: &'a AstNode<'a>,
-    path: &PathBuf,
+    path: &Path,
     tasks: &mut Vec<Task>,
     current_heading: &mut Option<HeadingInfo>,
     mappings: &[(&str, &str)],
@@ -54,7 +73,7 @@ fn process_node<'a>(
         NodeValue::Paragraph => {
             if let Some(info) = current_heading.take() {
                 let (created, timestamp) = extract_timestamps_from_node(node, mappings);
-                
+
                 if created.is_some() || timestamp.is_some() {
                     let content = extract_paragraph_text(node);
                     let (ts_type, ts_date, ts_time, ts_end_time) = if let Some(ref ts) = timestamp {
@@ -62,7 +81,7 @@ fn process_node<'a>(
                     } else {
                         (None, None, None, None)
                     };
-                    
+
                     tasks.push(Task {
                         file: path.display().to_string(),
                         line: info.line,
@@ -99,10 +118,13 @@ fn process_node<'a>(
     }
 }
 
+/// Parse heading text to extract task type, priority, and title
 fn parse_heading(text: &str) -> (Option<TaskType>, Option<Priority>, String) {
     if let Some(caps) = HEADING_RE.captures(text) {
         let task_type = TaskType::from_str(&caps[1]);
-        let priority = caps.get(2).map(|m| Priority::from_char(m.as_str().chars().next().unwrap()));
+        let priority = caps
+            .get(2)
+            .map(|m| Priority::from_char(m.as_str().chars().next().unwrap()));
         let heading = caps[3].to_string();
         (task_type, priority, heading)
     } else {
@@ -110,10 +132,14 @@ fn parse_heading(text: &str) -> (Option<TaskType>, Option<Priority>, String) {
     }
 }
 
-fn extract_timestamps_from_node<'a>(node: &'a AstNode<'a>, mappings: &[(&str, &str)]) -> (Option<String>, Option<String>) {
+/// Extract timestamps (CREATED and others) from paragraph node
+fn extract_timestamps_from_node<'a>(
+    node: &'a AstNode<'a>,
+    mappings: &[(&str, &str)],
+) -> (Option<String>, Option<String>) {
     let mut created = None;
     let mut timestamp = None;
-    
+
     if let NodeValue::Paragraph = &node.data.borrow().value {
         for child in node.children() {
             if let NodeValue::Code(code) = &child.data.borrow().value {
@@ -129,6 +155,7 @@ fn extract_timestamps_from_node<'a>(node: &'a AstNode<'a>, mappings: &[(&str, &s
     (created, timestamp)
 }
 
+/// Extract plain text from paragraph (excluding code blocks)
 fn extract_paragraph_text<'a>(node: &'a AstNode<'a>) -> String {
     let mut text = String::new();
     for child in node.children() {
@@ -139,6 +166,7 @@ fn extract_paragraph_text<'a>(node: &'a AstNode<'a>) -> String {
     text.trim().to_string()
 }
 
+/// Extract all text from a node (for headings)
 fn extract_text<'a>(node: &'a AstNode<'a>) -> String {
     let mut text = String::new();
     for child in node.children() {
@@ -147,4 +175,33 @@ fn extract_text<'a>(node: &'a AstNode<'a>) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_heading_with_priority() {
+        let (task_type, priority, heading) = parse_heading("TODO [#A] Important task");
+        assert_eq!(task_type, Some(TaskType::Todo));
+        assert_eq!(priority, Some(Priority::A));
+        assert_eq!(heading, "Important task");
+    }
+
+    #[test]
+    fn test_parse_heading_without_priority() {
+        let (task_type, priority, heading) = parse_heading("DONE Simple task");
+        assert_eq!(task_type, Some(TaskType::Done));
+        assert_eq!(priority, None);
+        assert_eq!(heading, "Simple task");
+    }
+
+    #[test]
+    fn test_parse_heading_no_task() {
+        let (task_type, priority, heading) = parse_heading("Regular heading");
+        assert_eq!(task_type, None);
+        assert_eq!(priority, None);
+        assert_eq!(heading, "Regular heading");
+    }
 }
