@@ -98,7 +98,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     stats.print_summary();
 
-    tasks = filter_agenda(
+    let agenda_output = filter_agenda(
         tasks,
         cli.get_agenda_mode(),
         cli.date.as_deref(),
@@ -108,10 +108,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let output = match cli.format.as_str() {
-        "json" => serde_json::to_string_pretty(&tasks)
-            .map_err(|e| format!("Failed to serialize to JSON: {e}"))?,
-        "md" => render_markdown(&tasks),
-        "html" => render_html(&tasks),
+        "json" => match agenda_output {
+            agenda::AgendaOutput::Days(days) => serde_json::to_string_pretty(&days)
+                .map_err(|e| format!("Failed to serialize to JSON: {e}"))?,
+            agenda::AgendaOutput::Tasks(tasks) => serde_json::to_string_pretty(&tasks)
+                .map_err(|e| format!("Failed to serialize to JSON: {e}"))?,
+        },
+        "md" => match agenda_output {
+            agenda::AgendaOutput::Days(days) => render::render_days_markdown(&days),
+            agenda::AgendaOutput::Tasks(tasks) => render_markdown(&tasks),
+        },
+        "html" => match agenda_output {
+            agenda::AgendaOutput::Days(days) => render::render_days_html(&days),
+            agenda::AgendaOutput::Tasks(tasks) => render_html(&tasks),
+        },
         _ => return Err(format!("Invalid format: {}", cli.format).into()),
     };
 

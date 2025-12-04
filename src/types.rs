@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 /// Task status type (TODO or DONE)
@@ -55,7 +56,7 @@ impl Priority {
 }
 
 /// Extracted task from markdown file
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub file: String,
     pub line: u32,
@@ -112,6 +113,35 @@ impl ProcessingStats {
             if self.files_failed_read > 0 {
                 eprintln!("  Files failed to read: {}", self.files_failed_read);
             }
+        }
+    }
+}
+
+/// Task with day offset information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskWithOffset {
+    #[serde(flatten)]
+    pub task: Task,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub days_offset: Option<i64>,
+}
+
+/// Day agenda containing tasks for a specific date
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DayAgenda {
+    pub date: String,
+    pub scheduled: Vec<TaskWithOffset>,
+    pub upcoming: Vec<TaskWithOffset>,
+    pub overdue: Vec<TaskWithOffset>,
+}
+
+impl DayAgenda {
+    pub fn new(date: NaiveDate) -> Self {
+        Self {
+            date: date.format("%Y-%m-%d").to_string(),
+            scheduled: Vec::new(),
+            upcoming: Vec::new(),
+            overdue: Vec::new(),
         }
     }
 }

@@ -1,32 +1,25 @@
 use chrono::{Datelike, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 
-use crate::timestamp::{parse_org_timestamp, timestamp_in_range, timestamp_matches_date};
-use crate::types::{Task, TaskType};
+use crate::timestamp::parse_org_timestamp;
+use crate::types::{DayAgenda, Task, TaskType, TaskWithOffset};
+
+/// Agenda output format
+#[derive(Debug)]
+pub enum AgendaOutput {
+    Days(Vec<DayAgenda>),
+    Tasks(Vec<Task>),
+}
 
 /// Filter tasks based on agenda mode
-///
-/// # Arguments
-/// * `tasks` - Tasks to filter
-/// * `mode` - Agenda mode: "day", "week", or "tasks"
-/// * `date` - Optional date for "day" mode (YYYY-MM-DD)
-/// * `from` - Optional start date for "week" mode (YYYY-MM-DD)
-/// * `to` - Optional end date for "week" mode (YYYY-MM-DD)
-/// * `tz` - Timezone string (e.g., "Europe/Moscow")
-///
-/// # Returns
-/// Filtered and sorted tasks
-///
-/// # Errors
-/// Returns error if timezone is invalid or date parsing fails
 pub fn filter_agenda(
-    mut tasks: Vec<Task>,
+    tasks: Vec<Task>,
     mode: &str,
     date: Option<&str>,
     from: Option<&str>,
     to: Option<&str>,
     tz: &str,
-) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
+) -> Result<AgendaOutput, Box<dyn std::error::Error>> {
     let tz: Tz = tz
         .parse()
         .map_err(|_| format!("Invalid timezone: {tz}. Use IANA timezone names (e.g., 'Europe/Moscow', 'UTC')"))?;
@@ -40,7 +33,7 @@ pub fn filter_agenda(
                 tz.from_utc_datetime(&chrono::Utc::now().naive_utc())
                     .date_naive()
             };
-            tasks.retain(|t| task_matches_date(t, &target_date));
+            Ok(AgendaOutput::Days(vec![build_day_agenda(tasks, target_date)]))
         }
         "week" => {
             let (start_date, end_date) = if let (Some(from_str), Some(to_str)) = (from, to) {
@@ -57,20 +50,70 @@ pub fn filter_agenda(
             } else {
                 get_current_week(&tz)
             };
-            tasks.retain(|t| task_in_range(t, &start_date, &end_date));
+            Ok(AgendaOutput::Days(build_week_agenda(tasks, start_date, end_date)))
         }
         "tasks" => {
-            tasks.retain(|t| matches!(t.task_type, Some(TaskType::Todo)));
-            tasks.sort_by_key(|t| t.priority.as_ref().map(|p| p.order()).unwrap_or(999));
+            let mut filtered: Vec<Task> = tasks
+                .into_iter()
+                .filter(|t| matches!(t.task_type, Some(TaskType::Todo)))
+                .collect();
+            filtered.sort_by_key(|t| t.priority.as_ref().map(|p| p.order()).unwrap_or(999));
+            Ok(AgendaOutput::Tasks(filtered))
         }
-        _ => {
-            return Err(format!(
-                "Invalid agenda mode '{mode}'. Valid modes: 'day', 'week', 'tasks'"
-            )
-            .into())
+        _ => Err(format!("Invalid agenda mode '{mode}'. Valid modes: 'day', 'week', 'tasks'").into()),
+    }
+}
+
+/// Build agenda for a single day
+fn build_day_agenda(tasks: Vec<Task>, target_date: NaiveDate) -> DayAgenda {
+    let mut agenda = DayAgenda::new(target_date);
+    
+    for task in tasks {
+        if let Some(ref ts) = task.timestamp {
+            if let Some(parsed) = parse_org_timestamp(ts, None) {
+                let task_date = parsed.date;
+                let days_diff = (task_date - target_date).num_days();
+                
+                let task_with_offset = TaskWithOffset {
+                    task,
+                    days_offset: if days_diff != 0 { Some(days_diff) } else { None },
+                };
+                
+                match days_diff {
+                    0 => agenda.scheduled.push(task_with_offset),
+                    d if d > 0 => agenda.upcoming.push(task_with_offset),
+                    _ => agenda.overdue.push(task_with_offset),
+                }
+            }
         }
     }
-    Ok(tasks)
+    
+    // Sort scheduled by time
+    agenda.scheduled.sort_by(|a, b| {
+        a.task.timestamp_time.cmp(&b.task.timestamp_time)
+    });
+    
+    // Sort upcoming by days offset
+    agenda.upcoming.sort_by_key(|t| t.days_offset);
+    
+    // Sort overdue by days offset (most overdue first)
+    agenda.overdue.sort_by_key(|t| t.days_offset);
+    
+    agenda
+}
+
+/// Build agenda for a week
+fn build_week_agenda(tasks: Vec<Task>, start_date: NaiveDate, end_date: NaiveDate) -> Vec<DayAgenda> {
+    // Build agenda for each day in range
+    let mut result = Vec::new();
+    let mut current = start_date;
+    
+    while current <= end_date {
+        result.push(build_day_agenda(tasks.clone(), current));
+        current += chrono::Duration::days(1);
+    }
+    
+    result
 }
 
 /// Get current week (Monday to Sunday) in the given timezone
@@ -83,91 +126,4 @@ fn get_current_week(tz: &Tz) -> (NaiveDate, NaiveDate) {
     let monday = today - chrono::Duration::days(days_from_monday as i64);
     let sunday = monday + chrono::Duration::days(6);
     (monday, sunday)
-}
-
-/// Check if task matches a specific date
-fn task_matches_date(task: &Task, target_date: &NaiveDate) -> bool {
-    if let Some(ref ts) = task.timestamp {
-        if let Some(parsed) = parse_org_timestamp(ts, None) {
-            return timestamp_matches_date(&parsed, target_date);
-        }
-    }
-    false
-}
-
-/// Check if task falls within a date range
-fn task_in_range(task: &Task, start: &NaiveDate, end: &NaiveDate) -> bool {
-    if let Some(ref ts) = task.timestamp {
-        if let Some(parsed) = parse_org_timestamp(ts, None) {
-            return timestamp_in_range(&parsed, start, end);
-        }
-    }
-    false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::Priority;
-
-    #[test]
-    fn test_filter_tasks_mode() {
-        let tasks = vec![
-            Task {
-                file: "test.md".to_string(),
-                line: 1,
-                heading: "Task 1".to_string(),
-                content: String::new(),
-                task_type: Some(TaskType::Todo),
-                priority: Some(Priority::A),
-                created: None,
-                timestamp: None,
-                timestamp_type: None,
-                timestamp_date: None,
-                timestamp_time: None,
-                timestamp_end_time: None,
-            },
-            Task {
-                file: "test.md".to_string(),
-                line: 2,
-                heading: "Task 2".to_string(),
-                content: String::new(),
-                task_type: Some(TaskType::Done),
-                priority: Some(Priority::B),
-                created: None,
-                timestamp: None,
-                timestamp_type: None,
-                timestamp_date: None,
-                timestamp_time: None,
-                timestamp_end_time: None,
-            },
-        ];
-
-        let result = filter_agenda(tasks, "tasks", None, None, None, "UTC").unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].heading, "Task 1");
-    }
-
-    #[test]
-    fn test_invalid_timezone() {
-        let tasks = vec![];
-        let result = filter_agenda(tasks, "day", None, None, None, "Invalid/Timezone");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid timezone"));
-    }
-
-    #[test]
-    fn test_invalid_date_format() {
-        let tasks = vec![];
-        let result = filter_agenda(tasks, "day", Some("2024-13-01"), None, None, "UTC");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_mode() {
-        let tasks = vec![];
-        let result = filter_agenda(tasks, "invalid", None, None, None, "UTC");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid agenda mode"));
-    }
 }

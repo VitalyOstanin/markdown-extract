@@ -303,7 +303,11 @@ markdown-extract --agenda day --tz America/New_York
 
 ## Формат вывода
 
-### JSON (по умолчанию)
+Формат вывода зависит от режима agenda:
+
+### Режим `--tasks` (список задач)
+
+#### JSON
 
 ```json
 [
@@ -324,18 +328,7 @@ markdown-extract --agenda day --tz America/New_York
 ]
 ```
 
-#### Поля разобранных временных меток
-
-Для удобства отрисовки agenda внешними потребителями, временные метки автоматически разбираются на составные части:
-
-- `timestamp_type` - тип временной метки: `SCHEDULED`, `DEADLINE`, `CLOSED`, `PLAIN`
-- `timestamp_date` - дата в формате `YYYY-MM-DD`
-- `timestamp_time` - время начала (если указано), например `10:00`
-- `timestamp_end_time` - время окончания (если указан диапазон), например `12:00`
-
-Эти поля позволяют внешним системам отображать задачи на временной шкале без повторного парсинга строки `timestamp`.
-
-### Markdown
+#### Markdown
 
 ```markdown
 # Tasks
@@ -350,19 +343,114 @@ markdown-extract --agenda day --tz America/New_York
 Task description
 ```
 
-### HTML
+### Режимы `--agenda day` и `--agenda week` (дневная agenda)
 
-```html
-<html><body><h1>Tasks</h1>
-<h2>Task title</h2>
-<p><strong>File:</strong> /path/to/file.md:42</p>
-<p><strong>Type:</strong> TODO</p>
-<p><strong>Priority:</strong> [#A]</p>
-<p><strong>Created:</strong> CREATED: <2024-12-01 Mon></p>
-<p><strong>Time:</strong> DEADLINE: <2024-12-15 Sun></p>
-<p>Task description</p>
-</body></html>
+В этих режимах задачи группируются по дням. Каждый день содержит три категории задач:
+
+- **Overdue** - просроченные задачи (с указанием количества дней просрочки)
+- **Scheduled** - задачи на текущий день (отсортированные по времени)
+- **Upcoming** - предстоящие задачи (с указанием количества дней до срока)
+
+#### JSON
+
+```json
+[
+  {
+    "date": "2024-12-05",
+    "scheduled": [
+      {
+        "file": "./examples/project-tasks.md",
+        "line": 5,
+        "heading": "Design database schema",
+        "content": "Need to finalize the database structure.",
+        "task_type": "TODO",
+        "priority": "A",
+        "timestamp": "SCHEDULED: <2024-12-05 Wed>",
+        "timestamp_type": "SCHEDULED",
+        "timestamp_date": "2024-12-05"
+      }
+    ],
+    "upcoming": [
+      {
+        "file": "./examples/project-tasks.md",
+        "line": 47,
+        "heading": "Review pull request #42",
+        "content": "Critical bug fix needs review.",
+        "task_type": "TODO",
+        "timestamp": "DEADLINE: <2024-12-06 Thu>",
+        "timestamp_type": "DEADLINE",
+        "timestamp_date": "2024-12-06",
+        "days_offset": 1
+      }
+    ],
+    "overdue": [
+      {
+        "file": "./examples/project-tasks.md",
+        "line": 13,
+        "heading": "Create project repository",
+        "content": "Repository created and initial structure set up.",
+        "task_type": "DONE",
+        "timestamp": "CLOSED: <2024-12-01 Mon>",
+        "timestamp_type": "CLOSED",
+        "timestamp_date": "2024-12-01",
+        "days_offset": -4
+      }
+    ]
+  }
+]
 ```
+
+Поле `days_offset` показывает:
+- Положительное число - количество дней до срока (upcoming)
+- Отрицательное число - количество дней просрочки (overdue)
+- Отсутствует для задач текущего дня (scheduled)
+
+#### Markdown
+
+```markdown
+# Agenda
+
+## 2024-12-05
+
+### Overdue
+
+#### Create project repository (4 days ago)
+**File:** ./examples/project-tasks.md:13
+**Type:** Done
+**Time:** CLOSED: <2024-12-01 Mon>
+
+Repository created and initial structure set up.
+
+### Scheduled
+
+#### Design database schema
+**File:** ./examples/project-tasks.md:5
+**Type:** Todo
+**Priority:** A
+**Time:** SCHEDULED: <2024-12-05 Wed>
+
+Need to finalize the database structure.
+
+### Upcoming
+
+#### Review pull request #42 (in 1 days)
+**File:** ./examples/project-tasks.md:47
+**Type:** Todo
+**Time:** DEADLINE: <2024-12-06 Thu>
+
+Critical bug fix needs review.
+```
+
+#### Поля разобранных временных меток
+
+Для удобства отрисовки agenda внешними потребителями, временные метки автоматически разбираются на составные части:
+
+- `timestamp_type` - тип временной метки: `SCHEDULED`, `DEADLINE`, `CLOSED`, `PLAIN`
+- `timestamp_date` - дата в формате `YYYY-MM-DD`
+- `timestamp_time` - время начала (если указано), например `10:00`
+- `timestamp_end_time` - время окончания (если указан диапазон), например `12:00`
+
+Эти поля позволяют внешним системам отображать задачи на временной шкале без повторного парсинга строки `timestamp`.
 
 ## Структура проекта
 
