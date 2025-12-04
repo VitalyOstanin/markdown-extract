@@ -19,12 +19,18 @@ pub fn filter_agenda(
     from: Option<&str>,
     to: Option<&str>,
     tz: &str,
+    current_date_override: Option<&str>,
 ) -> Result<AgendaOutput, Box<dyn std::error::Error>> {
     let tz: Tz = tz
         .parse()
         .map_err(|_| format!("Invalid timezone: {tz}. Use IANA timezone names (e.g., 'Europe/Moscow', 'UTC')"))?;
 
-    let today = tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive();
+    let today = if let Some(date_str) = current_date_override {
+        NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid current-date format '{date_str}': {e}. Use YYYY-MM-DD"))?
+    } else {
+        tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive()
+    };
 
     match mode {
         "day" => {

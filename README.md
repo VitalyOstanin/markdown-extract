@@ -79,6 +79,7 @@ markdown-extract [OPTIONS]
 - `--from <DATE>` - начальная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: понедельник текущей недели)
 - `--to <DATE>` - конечная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: воскресенье текущей недели)
 - `--tz <TIMEZONE>` - часовой пояс для определения текущей даты (по умолчанию: `Europe/Moscow`)
+- `--current-date <DATE>` - явная текущая дата для расчета overdue в формате YYYY-MM-DD (по умолчанию: сегодня в указанной таймзоне)
 
 ### Примеры использования
 
@@ -150,6 +151,11 @@ markdown-extract --dir ./notes --tasks
 ```bash
 markdown-extract --dir ./notes --tz UTC
 markdown-extract --dir ./notes --tz America/New_York
+```
+
+Использовать явную текущую дату (для тестов):
+```bash
+markdown-extract --dir ./notes --agenda week --current-date 2024-12-05
 ```
 
 ## Примеры файлов

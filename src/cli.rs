@@ -51,6 +51,10 @@ pub struct Cli {
     /// Timezone for date calculations (IANA timezone, e.g., "Europe/Moscow")
     #[arg(long, default_value = "Europe/Moscow")]
     pub tz: String,
+
+    /// Current date for overdue calculation (YYYY-MM-DD format, defaults to today in specified timezone)
+    #[arg(long, value_parser = validate_date)]
+    pub current_date: Option<String>,
 }
 
 impl Cli {

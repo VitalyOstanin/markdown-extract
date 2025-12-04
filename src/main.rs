@@ -105,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         cli.from.as_deref(),
         cli.to.as_deref(),
         &cli.tz,
+        cli.current_date.as_deref(),
     )?;
 
     let output = match cli.format.as_str() {
