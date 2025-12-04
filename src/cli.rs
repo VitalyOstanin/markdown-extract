@@ -2,63 +2,51 @@ use chrono::NaiveDate;
 use clap::Parser;
 use std::path::PathBuf;
 
-/// CLI arguments for markdown-extract
+use crate::format::OutputFormat;
+
 #[derive(Parser)]
 #[command(name = "markdown-extract")]
 #[command(about = "Extract tasks from markdown files with org-mode timestamps")]
 #[command(version)]
 pub struct Cli {
-    /// Directory to search for markdown files
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
 
-    /// Glob pattern for filtering files
     #[arg(long, default_value = "*.md")]
     pub glob: String,
 
-    /// Output format: json, md, html
-    #[arg(long, default_value = "json", value_parser = ["json", "md", "html"])]
-    pub format: String,
+    #[arg(long, default_value = "json", value_parser = parse_format)]
+    pub format: OutputFormat,
 
-    /// Output file path (stdout if not specified)
     #[arg(long)]
     pub output: Option<PathBuf>,
 
-    /// Comma-separated locales for weekday names (e.g., "ru,en")
     #[arg(long, default_value = "ru,en")]
     pub locale: String,
 
-    /// Agenda mode: day, week
     #[arg(long, default_value = "day", value_parser = ["day", "week"], conflicts_with = "tasks")]
     pub agenda: String,
 
-    /// Show all TODO tasks sorted by priority (alternative to --agenda tasks)
     #[arg(long)]
     pub tasks: bool,
 
-    /// Date for 'day' mode (YYYY-MM-DD format)
     #[arg(long, value_parser = validate_date)]
     pub date: Option<String>,
 
-    /// Start date for 'week' mode (YYYY-MM-DD format)
     #[arg(long, value_parser = validate_date)]
     pub from: Option<String>,
 
-    /// End date for 'week' mode (YYYY-MM-DD format)
     #[arg(long, value_parser = validate_date)]
     pub to: Option<String>,
 
-    /// Timezone for date calculations (IANA timezone, e.g., "Europe/Moscow")
     #[arg(long, default_value = "Europe/Moscow", value_parser = validate_timezone)]
     pub tz: String,
 
-    /// Current date for overdue calculation (YYYY-MM-DD format, defaults to today in specified timezone)
     #[arg(long, value_parser = validate_date)]
     pub current_date: Option<String>,
 }
 
 impl Cli {
-    /// Get effective agenda mode (handles --tasks flag)
     pub fn get_agenda_mode(&self) -> &str {
         if self.tasks {
             "tasks"
@@ -68,27 +56,22 @@ impl Cli {
     }
 }
 
-/// Validate date format (YYYY-MM-DD)
+fn parse_format(s: &str) -> Result<OutputFormat, String> {
+    s.parse()
+}
+
 fn validate_date(s: &str) -> Result<String, String> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .map(|_| s.to_string())
         .map_err(|e| format!("Invalid date '{s}': {e}. Use YYYY-MM-DD format"))
 }
 
-/// Validate timezone (IANA timezone name)
 fn validate_timezone(s: &str) -> Result<String, String> {
     s.parse::<chrono_tz::Tz>()
         .map(|_| s.to_string())
         .map_err(|_| format!("Invalid timezone '{s}'. Use IANA timezone names (e.g., 'Europe/Moscow', 'UTC')"))
 }
 
-/// Get weekday name mappings for the specified locales
-///
-/// # Arguments
-/// * `locale` - Comma-separated locale codes (e.g., "ru,en")
-///
-/// # Returns
-/// Vector of (localized_name, english_name) tuples
 pub fn get_weekday_mappings(locale: &str) -> Vec<(&'static str, &'static str)> {
     let locales: Vec<&str> = locale.split(',').map(|s| s.trim()).collect();
     let mut mappings = Vec::new();

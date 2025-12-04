@@ -1,17 +1,16 @@
 use chrono::{Datelike, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 
+use crate::error::AppError;
 use crate::timestamp::parse_org_timestamp;
 use crate::types::{DayAgenda, Task, TaskType, TaskWithOffset};
 
-/// Agenda output format
 #[derive(Debug)]
 pub enum AgendaOutput {
     Days(Vec<DayAgenda>),
     Tasks(Vec<Task>),
 }
 
-/// Filter tasks based on agenda mode
 pub fn filter_agenda(
     tasks: Vec<Task>,
     mode: &str,
@@ -20,14 +19,14 @@ pub fn filter_agenda(
     to: Option<&str>,
     tz: &str,
     current_date_override: Option<&str>,
-) -> Result<AgendaOutput, Box<dyn std::error::Error>> {
+) -> Result<AgendaOutput, AppError> {
     let tz: Tz = tz
         .parse()
-        .map_err(|_| format!("Invalid timezone: {tz}. Use IANA timezone names (e.g., 'Europe/Moscow', 'UTC')"))?;
+        .map_err(|_| AppError::InvalidTimezone(tz.to_string()))?;
 
     let today = if let Some(date_str) = current_date_override {
         NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-            .map_err(|e| format!("Invalid current-date format '{date_str}': {e}. Use YYYY-MM-DD"))?
+            .map_err(|e| AppError::InvalidDate(format!("current-date '{date_str}': {e}")))?
     } else {
         tz.from_utc_datetime(&chrono::Utc::now().naive_utc()).date_naive()
     };
@@ -36,7 +35,7 @@ pub fn filter_agenda(
         "day" => {
             let target_date = if let Some(date_str) = date {
                 NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                    .map_err(|e| format!("Invalid date format '{date_str}': {e}. Use YYYY-MM-DD"))?
+                    .map_err(|e| AppError::InvalidDate(format!("date '{date_str}': {e}")))?
             } else {
                 today
             };
@@ -45,12 +44,12 @@ pub fn filter_agenda(
         "week" => {
             let (start_date, end_date) = if let (Some(from_str), Some(to_str)) = (from, to) {
                 let start = NaiveDate::parse_from_str(from_str, "%Y-%m-%d")
-                    .map_err(|e| format!("Invalid 'from' date '{from_str}': {e}. Use YYYY-MM-DD"))?;
+                    .map_err(|e| AppError::InvalidDate(format!("from '{from_str}': {e}")))?;
                 let end = NaiveDate::parse_from_str(to_str, "%Y-%m-%d")
-                    .map_err(|e| format!("Invalid 'to' date '{to_str}': {e}. Use YYYY-MM-DD"))?;
+                    .map_err(|e| AppError::InvalidDate(format!("to '{to_str}': {e}")))?;
                 
                 if start > end {
-                    return Err(format!("Start date {from_str} is after end date {to_str}").into());
+                    return Err(AppError::DateRange(format!("Start date {from_str} is after end date {to_str}")));
                 }
                 
                 (start, end)
@@ -68,11 +67,10 @@ pub fn filter_agenda(
             filtered.sort_by_key(|t| t.priority.as_ref().map(|p| p.order()).unwrap_or(999));
             Ok(AgendaOutput::Tasks(filtered))
         }
-        _ => Err(format!("Invalid agenda mode '{mode}'. Valid modes: 'day', 'week', 'tasks'").into()),
+        _ => Err(AppError::InvalidDate(format!("Invalid agenda mode '{mode}'"))),
     }
 }
 
-/// Build agenda for a single day
 fn build_day_agenda(tasks: &[Task], day_date: NaiveDate, current_date: NaiveDate) -> DayAgenda {
     let mut agenda = DayAgenda::new(day_date);
     let is_today = day_date == current_date;
@@ -80,26 +78,17 @@ fn build_day_agenda(tasks: &[Task], day_date: NaiveDate, current_date: NaiveDate
     for task in tasks {
         if let Some(ref ts) = task.timestamp {
             if let Some(parsed) = parse_org_timestamp(ts, None) {
-                // Handle repeating tasks
                 if let Some(ref repeater) = parsed.repeater {
                     handle_repeating_task(task, &parsed, repeater, day_date, current_date, &mut agenda);
                 } else {
-                    // Non-repeating task
                     handle_non_repeating_task(task, &parsed, day_date, is_today, &mut agenda);
                 }
             }
         }
     }
     
-    // Sort overdue: oldest first
     agenda.overdue.sort_by_key(|t| t.days_offset);
-    
-    // Sort scheduled_timed: earliest time first
-    agenda.scheduled_timed.sort_by(|a, b| {
-        a.task.timestamp_time.cmp(&b.task.timestamp_time)
-    });
-    
-    // Sort upcoming: nearest first
+    agenda.scheduled_timed.sort_by(|a, b| a.task.timestamp_time.cmp(&b.task.timestamp_time));
     agenda.upcoming.sort_by_key(|t| t.days_offset);
     
     agenda
@@ -115,36 +104,32 @@ fn handle_non_repeating_task(
     let task_date = parsed.date;
     let days_diff = (task_date - day_date).num_days();
     
-    let task_with_offset = TaskWithOffset {
-        task: task.clone(),
-        days_offset: if days_diff != 0 { Some(days_diff) } else { None },
-    };
+    let days_offset = if days_diff != 0 { Some(days_diff) } else { None };
     
     if task_date == day_date {
-        // Tasks scheduled for this day
+        let task_with_offset = TaskWithOffset {
+            task: task.clone(),
+            days_offset,
+        };
         if task_with_offset.task.timestamp_time.is_some() {
             agenda.scheduled_timed.push(task_with_offset);
         } else {
             agenda.scheduled_no_time.push(task_with_offset);
         }
     } else if days_diff < 0 && is_today {
-        // Overdue tasks (only show on current date) - clear time
-        let mut task_copy = task_with_offset.task.clone();
-        task_copy.timestamp_time = None;
-        task_copy.timestamp_end_time = None;
-        agenda.overdue.push(TaskWithOffset {
-            task: task_copy,
-            days_offset: task_with_offset.days_offset,
-        });
+        agenda.overdue.push(create_task_without_time(task, days_offset));
     } else if days_diff > 0 {
-        // Upcoming tasks - clear time so they don't appear in scheduled_timed
-        let mut task_copy = task_with_offset.task.clone();
-        task_copy.timestamp_time = None;
-        task_copy.timestamp_end_time = None;
-        agenda.upcoming.push(TaskWithOffset {
-            task: task_copy,
-            days_offset: task_with_offset.days_offset,
-        });
+        agenda.upcoming.push(create_task_without_time(task, days_offset));
+    }
+}
+
+fn create_task_without_time(task: &Task, days_offset: Option<i64>) -> TaskWithOffset {
+    let mut task_copy = task.clone();
+    task_copy.timestamp_time = None;
+    task_copy.timestamp_end_time = None;
+    TaskWithOffset {
+        task: task_copy,
+        days_offset,
     }
 }
 

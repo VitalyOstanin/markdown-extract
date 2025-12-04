@@ -1,5 +1,7 @@
 mod agenda;
 mod cli;
+mod error;
+mod format;
 mod parser;
 mod render;
 mod timestamp;
@@ -15,6 +17,8 @@ use std::path::Path;
 
 use crate::agenda::filter_agenda;
 use crate::cli::{get_weekday_mappings, Cli};
+use crate::error::AppError;
+use crate::format::OutputFormat;
 use crate::parser::extract_tasks;
 use crate::render::{render_html, render_markdown};
 use crate::types::{ProcessingStats, MAX_FILE_SIZE};
@@ -26,23 +30,21 @@ fn main() {
     }
 }
 
-/// Main application logic with proper error handling
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), AppError> {
     let cli = Cli::parse();
     let mappings = get_weekday_mappings(&cli.locale);
 
-    // Validate directory exists
     if !cli.dir.exists() {
-        return Err(format!("Directory does not exist: {}", cli.dir.display()).into());
+        return Err(AppError::InvalidDirectory(format!("Directory does not exist: {}", cli.dir.display())));
     }
     if !cli.dir.is_dir() {
-        return Err(format!("Path is not a directory: {}", cli.dir.display()).into());
+        return Err(AppError::InvalidDirectory(format!("Path is not a directory: {}", cli.dir.display())));
     }
 
     let mut tasks = Vec::new();
     let mut stats = ProcessingStats::default();
     let matcher = RegexMatcher::new(r"(?m)^[#*]+\s+(TODO|DONE)\s")
-        .map_err(|e| format!("Failed to create regex matcher: {e}"))?;
+        .map_err(|e| AppError::Regex(e.to_string()))?;
 
     let walker = WalkBuilder::new(&cli.dir).standard_filters(true).build();
 
@@ -58,22 +60,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        // Check file size before processing
         match fs::metadata(path) {
             Ok(metadata) => {
                 if metadata.len() > MAX_FILE_SIZE {
-                    eprintln!(
-                        "Warning: Skipping large file {} ({} bytes, max {} bytes)",
-                        path.display(),
-                        metadata.len(),
-                        MAX_FILE_SIZE
-                    );
                     stats.files_skipped_size += 1;
                     continue;
                 }
             }
-            Err(e) => {
-                eprintln!("Warning: Failed to get metadata for {}: {}", path.display(), e);
+            Err(_) => {
                 stats.files_failed_read += 1;
                 continue;
             }
@@ -81,10 +75,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut found = false;
         let mut searcher = Searcher::new();
-        let search_result = searcher.search_path(&matcher, path, FoundSink { found: &mut found });
-
-        if let Err(e) = search_result {
-            eprintln!("Warning: Failed to search {}: {}", path.display(), e);
+        if searcher.search_path(&matcher, path, FoundSink { found: &mut found }).is_err() {
             stats.files_failed_search += 1;
             continue;
         }
@@ -95,15 +86,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     tasks.extend(extract_tasks(path, &content, &mappings));
                     stats.files_processed += 1;
                 }
-                Err(e) => {
-                    eprintln!("Warning: Failed to read {}: {}", path.display(), e);
+                Err(_) => {
                     stats.files_failed_read += 1;
                 }
             }
         }
     }
 
-    stats.print_summary();
+    if stats.has_warnings() {
+        stats.print_summary();
+    }
 
     let agenda_output = filter_agenda(
         tasks,
@@ -115,37 +107,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         cli.current_date.as_deref(),
     )?;
 
-    let output = match cli.format.as_str() {
-        "json" => match agenda_output {
-            agenda::AgendaOutput::Days(days) => serde_json::to_string_pretty(&days)
-                .map_err(|e| format!("Failed to serialize to JSON: {e}"))?,
-            agenda::AgendaOutput::Tasks(tasks) => serde_json::to_string_pretty(&tasks)
-                .map_err(|e| format!("Failed to serialize to JSON: {e}"))?,
+    let output = match cli.format {
+        OutputFormat::Json => match agenda_output {
+            agenda::AgendaOutput::Days(days) => serde_json::to_string_pretty(&days)?,
+            agenda::AgendaOutput::Tasks(tasks) => serde_json::to_string_pretty(&tasks)?,
         },
-        "md" => match agenda_output {
+        OutputFormat::Markdown => match agenda_output {
             agenda::AgendaOutput::Days(days) => render::render_days_markdown(&days),
             agenda::AgendaOutput::Tasks(tasks) => render_markdown(&tasks),
         },
-        "html" => match agenda_output {
+        OutputFormat::Html => match agenda_output {
             agenda::AgendaOutput::Days(days) => render::render_days_html(&days),
             agenda::AgendaOutput::Tasks(tasks) => render_html(&tasks),
         },
-        _ => return Err(format!("Invalid format: {}", cli.format).into()),
     };
 
     if let Some(out_path) = cli.output {
-        fs::write(&out_path, output)
-            .map_err(|e| format!("Failed to write to {}: {}", out_path.display(), e))?;
+        fs::write(&out_path, output)?;
     } else {
-        io::stdout()
-            .write_all(output.as_bytes())
-            .map_err(|e| format!("Failed to write to stdout: {e}"))?;
+        io::stdout().write_all(output.as_bytes())?;
     }
 
     Ok(())
 }
 
-/// Sink for grep-searcher to detect if pattern was found
 struct FoundSink<'a> {
     found: &'a mut bool,
 }
@@ -155,18 +140,14 @@ impl<'a> Sink for FoundSink<'a> {
 
     fn matched(&mut self, _searcher: &Searcher, _mat: &SinkMatch) -> Result<bool, Self::Error> {
         *self.found = true;
-        Ok(false) // Stop after first match
+        Ok(false)
     }
 }
 
-/// Check if file path matches glob pattern
-///
-/// # Errors
-/// Returns error if pattern is invalid
-fn matches_glob(path: &Path, pattern: &str) -> Result<bool, Box<dyn std::error::Error>> {
+fn matches_glob(path: &Path, pattern: &str) -> Result<bool, AppError> {
     if let Some(ext) = pattern.strip_prefix("*.") {
         if ext.is_empty() {
-            return Err("Invalid glob pattern: extension cannot be empty".into());
+            return Err(AppError::InvalidGlob("extension cannot be empty".to_string()));
         }
         return Ok(path.extension().and_then(|e| e.to_str()) == Some(ext));
     }
