@@ -339,7 +339,6 @@ fn get_current_month(tz: &Tz) -> (NaiveDate, NaiveDate) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Priority;
 
     fn create_test_task_with_type(date_str: &str, time: Option<&str>, task_type: TaskType, ts_type: &str) -> Task {
         let timestamp = if let Some(t) = time {
@@ -825,7 +824,6 @@ mod tests {
     #[test]
     fn test_get_current_month_december() {
         // Test December specifically (has 31 days)
-        let tz: Tz = "UTC".parse().unwrap();
         let today = NaiveDate::from_ymd_opt(2024, 12, 15).unwrap();
         
         // Simulate getting month for December

@@ -41,7 +41,7 @@ impl HolidayCalendar {
     pub fn next_workday(&self, date: NaiveDate) -> NaiveDate {
         let mut current = date + chrono::Duration::days(1);
         while !self.is_workday(current) {
-            current = current + chrono::Duration::days(1);
+            current += chrono::Duration::days(1);
         }
         current
     }

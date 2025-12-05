@@ -17,10 +17,10 @@ fn main() {
                 if let Some(date_str) = holiday.as_str() {
                     let parts: Vec<&str> = date_str.split('-').collect();
                     if parts.len() == 3 {
-                        code.push_str(&format!(
-                            "    ({}, {}, {}),\n",
-                            parts[0], parts[1], parts[2]
-                        ));
+                        let year: i32 = parts[0].parse().unwrap();
+                        let month: u32 = parts[1].parse().unwrap();
+                        let day: u32 = parts[2].parse().unwrap();
+                        code.push_str(&format!("    ({year}, {month}, {day}),\n"));
                     }
                 }
             }
@@ -36,10 +36,10 @@ fn main() {
                 if let Some(date_str) = workday.as_str() {
                     let parts: Vec<&str> = date_str.split('-').collect();
                     if parts.len() == 3 {
-                        code.push_str(&format!(
-                            "    ({}, {}, {}),\n",
-                            parts[0], parts[1], parts[2]
-                        ));
+                        let year: i32 = parts[0].parse().unwrap();
+                        let month: u32 = parts[1].parse().unwrap();
+                        let day: u32 = parts[2].parse().unwrap();
+                        code.push_str(&format!("    ({year}, {month}, {day}),\n"));
                     }
                 }
             }
