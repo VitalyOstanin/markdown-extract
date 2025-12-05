@@ -11,7 +11,7 @@ fn main() {
 
     let mut code = String::from("pub static HOLIDAYS: &[(i32, u32, u32)] = &[\n");
 
-    for (year, year_data) in data.as_object().unwrap() {
+    for (_year, year_data) in data.as_object().unwrap() {
         if let Some(holidays) = year_data.get("holidays").and_then(|v| v.as_array()) {
             for holiday in holidays {
                 if let Some(date_str) = holiday.as_str() {
@@ -30,7 +30,7 @@ fn main() {
     code.push_str("];\n\n");
     code.push_str("pub static WORKDAYS: &[(i32, u32, u32)] = &[\n");
 
-    for (year, year_data) in data.as_object().unwrap() {
+    for (_year, year_data) in data.as_object().unwrap() {
         if let Some(workdays) = year_data.get("workdays").and_then(|v| v.as_array()) {
             for workday in workdays {
                 if let Some(date_str) = workday.as_str() {
