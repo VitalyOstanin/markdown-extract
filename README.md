@@ -90,7 +90,7 @@ markdown-extract [OPTIONS]
 - `--format <FORMAT>` - формат вывода: `json`, `md`, `html` (по умолчанию: `json`)
 - `--output <OUTPUT>` - файл для записи результата (по умолчанию: stdout)
 - `--locale <LOCALE>` - локали для дней недели через запятую (по умолчанию: `ru,en`)
-- `--agenda <MODE>` - режим agenda: `day`, `week` (по умолчанию: `day`)
+- `--agenda <MODE>` - режим agenda: `day`, `week`, `month` (по умолчанию: `day`)
 - `--tasks` - показать все TODO задачи, отсортированные по приоритету (альтернатива `--agenda tasks`)
 - `--date <DATE>` - дата для режима `day` в формате YYYY-MM-DD (по умолчанию: текущая дата)
 - `--from <DATE>` - начальная дата для режима `week` в формате YYYY-MM-DD (по умолчанию: понедельник текущей недели)
@@ -154,9 +154,15 @@ markdown-extract --dir ./notes --agenda day --date 2025-12-10
 markdown-extract --dir ./notes --agenda week
 ```
 
+Задачи на текущий месяц:
+```bash
+markdown-extract --dir ./notes --agenda month
+```
+
 Задачи на диапазон дат:
 ```bash
 markdown-extract --dir ./notes --agenda week --from 2025-12-01 --to 2025-12-07
+markdown-extract --dir ./notes --agenda month --from 2025-12-01 --to 2025-12-31
 ```
 
 Все TODO задачи, отсортированные по приоритету:
@@ -190,7 +196,7 @@ markdown-extract --dir ./notes --agenda week --current-date 2024-12-05
 
 ## Режимы Agenda
 
-Утилита поддерживает три режима работы с задачами, аналогично Emacs Org-mode:
+Утилита поддерживает четыре режима работы с задачами, аналогично Emacs Org-mode:
 
 ### day - Задачи на день
 
@@ -219,6 +225,20 @@ markdown-extract --agenda week
 
 # Задачи на конкретный диапазон
 markdown-extract --agenda week --from 2025-12-01 --to 2025-12-07
+```
+
+### month - Задачи на месяц
+
+Показывает задачи с временными метками в диапазоне дат. По умолчанию используется текущий месяц (с первого по последний день).
+
+Работает аналогично режиму `week` - каждый день показывает scheduled, upcoming и overdue задачи.
+
+```bash
+# Задачи на текущий месяц
+markdown-extract --agenda month
+
+# Задачи на конкретный диапазон
+markdown-extract --agenda month --from 2025-12-01 --to 2025-12-31
 ```
 
 ### tasks - Все TODO задачи

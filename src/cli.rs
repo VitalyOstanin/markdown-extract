@@ -24,7 +24,7 @@ pub struct Cli {
     #[arg(long, default_value = "ru,en")]
     pub locale: String,
 
-    #[arg(long, default_value = "day", value_parser = ["day", "week"], conflicts_with = "tasks")]
+    #[arg(long, default_value = "day", value_parser = ["day", "week", "month"], conflicts_with = "tasks")]
     pub agenda: String,
 
     #[arg(long)]

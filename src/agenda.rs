@@ -61,6 +61,24 @@ pub fn filter_agenda(
             
             Ok(AgendaOutput::Days(build_week_agenda(&tasks, start_date, end_date, today)))
         }
+        "month" => {
+            let (start_date, end_date) = if let (Some(from_str), Some(to_str)) = (from, to) {
+                let start = NaiveDate::parse_from_str(from_str, "%Y-%m-%d")
+                    .map_err(|e| AppError::InvalidDate(format!("from '{from_str}': {e}")))?;
+                let end = NaiveDate::parse_from_str(to_str, "%Y-%m-%d")
+                    .map_err(|e| AppError::InvalidDate(format!("to '{to_str}': {e}")))?;
+                
+                if start > end {
+                    return Err(AppError::DateRange(format!("Start date {from_str} is after end date {to_str}")));
+                }
+                
+                (start, end)
+            } else {
+                get_current_month(&tz)
+            };
+            
+            Ok(AgendaOutput::Days(build_week_agenda(&tasks, start_date, end_date, today)))
+        }
         "tasks" => {
             let mut filtered: Vec<Task> = tasks
                 .into_iter()
@@ -302,6 +320,20 @@ fn get_current_week(tz: &Tz) -> (NaiveDate, NaiveDate) {
     let monday = today - chrono::Duration::days(days_from_monday as i64);
     let sunday = monday + chrono::Duration::days(6);
     (monday, sunday)
+}
+
+/// Get current month (first to last day) in the given timezone
+fn get_current_month(tz: &Tz) -> (NaiveDate, NaiveDate) {
+    let today = tz
+        .from_utc_datetime(&chrono::Utc::now().naive_utc())
+        .date_naive();
+    let first_day = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+    let last_day = if today.month() == 12 {
+        NaiveDate::from_ymd_opt(today.year(), 12, 31).unwrap()
+    } else {
+        NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1).unwrap() - chrono::Duration::days(1)
+    };
+    (first_day, last_day)
 }
 
 #[cfg(test)]
