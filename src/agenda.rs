@@ -812,6 +812,131 @@ mod tests {
     }
 
     #[test]
+    fn test_get_current_month() {
+        let tz: Tz = "UTC".parse().unwrap();
+        let (first, last) = get_current_month(&tz);
+        
+        assert_eq!(first.day(), 1);
+        assert_eq!(first.month(), last.month());
+        assert_eq!(first.year(), last.year());
+        assert!(last.day() >= 28 && last.day() <= 31);
+    }
+
+    #[test]
+    fn test_get_current_month_december() {
+        // Test December specifically (has 31 days)
+        let tz: Tz = "UTC".parse().unwrap();
+        let today = NaiveDate::from_ymd_opt(2024, 12, 15).unwrap();
+        
+        // Simulate getting month for December
+        let first_day = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+        let last_day = NaiveDate::from_ymd_opt(today.year(), 12, 31).unwrap();
+        
+        assert_eq!(first_day, NaiveDate::from_ymd_opt(2024, 12, 1).unwrap());
+        assert_eq!(last_day, NaiveDate::from_ymd_opt(2024, 12, 31).unwrap());
+    }
+
+    #[test]
+    fn test_get_current_month_february_leap() {
+        // Test February in leap year
+        let first_day = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
+        let last_day = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap() - chrono::Duration::days(1);
+        
+        assert_eq!(first_day, NaiveDate::from_ymd_opt(2024, 2, 1).unwrap());
+        assert_eq!(last_day, NaiveDate::from_ymd_opt(2024, 2, 29).unwrap());
+    }
+
+    #[test]
+    fn test_get_current_month_february_non_leap() {
+        // Test February in non-leap year
+        let first_day = NaiveDate::from_ymd_opt(2025, 2, 1).unwrap();
+        let last_day = NaiveDate::from_ymd_opt(2025, 3, 1).unwrap() - chrono::Duration::days(1);
+        
+        assert_eq!(first_day, NaiveDate::from_ymd_opt(2025, 2, 1).unwrap());
+        assert_eq!(last_day, NaiveDate::from_ymd_opt(2025, 2, 28).unwrap());
+    }
+
+    #[test]
+    fn test_month_agenda_length() {
+        let tasks = vec![
+            create_test_task("2024-12-15 Sun", None, TaskType::Todo),
+        ];
+        
+        let start_date = NaiveDate::from_ymd_opt(2024, 12, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+        let current_date = NaiveDate::from_ymd_opt(2024, 12, 5).unwrap();
+        
+        let month = build_week_agenda(&tasks, start_date, end_date, current_date);
+        
+        assert_eq!(month.len(), 31, "December should have 31 days");
+        assert_eq!(month[0].date, "2024-12-01");
+        assert_eq!(month[30].date, "2024-12-31");
+    }
+
+    #[test]
+    fn test_month_agenda_past_days_empty() {
+        let tasks = vec![
+            create_test_task("2024-12-02 Mon", Some("10:00"), TaskType::Todo),
+            create_test_task("2024-12-03 Tue", None, TaskType::Todo),
+            create_test_task("2024-12-10 Tue", Some("14:00"), TaskType::Todo),
+        ];
+        
+        let start_date = NaiveDate::from_ymd_opt(2024, 12, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+        let current_date = NaiveDate::from_ymd_opt(2024, 12, 5).unwrap();
+        
+        let month = build_week_agenda(&tasks, start_date, end_date, current_date);
+        
+        // Past days (before current_date) should be empty
+        for i in 0..4 { // Days 1-4 (indices 0-3)
+            assert_eq!(month[i].scheduled_timed.len(), 0, "Day {} should be empty", i + 1);
+            assert_eq!(month[i].scheduled_no_time.len(), 0, "Day {} should be empty", i + 1);
+            assert_eq!(month[i].overdue.len(), 0, "Day {} should be empty", i + 1);
+        }
+        
+        // Current day should have overdue tasks
+        assert!(month[4].overdue.len() > 0, "Current day should have overdue tasks");
+        
+        // Future days should have scheduled tasks if applicable
+        assert_eq!(month[9].scheduled_timed.len(), 1, "Day 10 should have scheduled task");
+    }
+
+    #[test]
+    fn test_month_agenda_february() {
+        let tasks = vec![
+            create_test_task("2024-02-15 Thu", None, TaskType::Todo),
+        ];
+        
+        let start_date = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap(); // Leap year
+        let current_date = NaiveDate::from_ymd_opt(2024, 2, 10).unwrap();
+        
+        let month = build_week_agenda(&tasks, start_date, end_date, current_date);
+        
+        assert_eq!(month.len(), 29, "February 2024 (leap year) should have 29 days");
+        assert_eq!(month[0].date, "2024-02-01");
+        assert_eq!(month[28].date, "2024-02-29");
+    }
+
+    #[test]
+    fn test_month_agenda_custom_range() {
+        let tasks = vec![
+            create_test_task("2024-12-10 Tue", None, TaskType::Todo),
+            create_test_task("2024-12-15 Sun", None, TaskType::Todo),
+        ];
+        
+        let start_date = NaiveDate::from_ymd_opt(2024, 12, 10).unwrap();
+        let end_date = NaiveDate::from_ymd_opt(2024, 12, 20).unwrap();
+        let current_date = NaiveDate::from_ymd_opt(2024, 12, 12).unwrap();
+        
+        let range = build_week_agenda(&tasks, start_date, end_date, current_date);
+        
+        assert_eq!(range.len(), 11, "Range should have 11 days (10-20 inclusive)");
+        assert_eq!(range[0].date, "2024-12-10");
+        assert_eq!(range[10].date, "2024-12-20");
+    }
+
+    #[test]
     fn test_done_tasks_not_in_overdue() {
         let tasks = vec![
             create_test_task("2024-12-01 Sun", None, TaskType::Done),
