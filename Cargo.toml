@@ -1,5 +1,5 @@
 [package]
-name = "markdown-extract"
+name = "markdown-org-extract"
 version = "0.1.0"
 edition = "2021"
 authors = ["Vitaly Ostanin <vitaly.ostanin@gmail.com>"]
