@@ -36,7 +36,7 @@ fn run() -> Result<(), AppError> {
 
     if let Some(year) = cli.holidays {
         let calendar = holidays::HolidayCalendar::load()
-            .map_err(|e| AppError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| AppError::Io(io::Error::other(e.to_string())))?;
         let holidays = calendar.get_holidays_for_year(year);
         let dates: Vec<String> = holidays.iter()
             .map(|d| d.format("%Y-%m-%d").to_string())

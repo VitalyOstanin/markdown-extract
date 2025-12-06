@@ -311,15 +311,8 @@ fn find_last_occurrence_before(base_date: NaiveDate, repeater: &crate::timestamp
                             -(repeater.value as i32)
                         };
                         
-                        if let Some(last) = add_months(next, months_to_subtract) {
-                            if last >= base_date && last < before_date {
-                                Some(last)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
+                        add_months(next, months_to_subtract)
+                            .filter(|&last| last >= base_date && last < before_date)
                     } else {
                         None
                     }

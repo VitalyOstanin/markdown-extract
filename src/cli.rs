@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::format::OutputFormat;
 
 #[derive(Parser)]
-#[command(name = "markdown-extract")]
+#[command(name = "markdown-org-extract")]
 #[command(about = "Extract tasks from markdown files with org-mode timestamps")]
 #[command(version)]
 pub struct Cli {
