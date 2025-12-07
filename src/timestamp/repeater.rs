@@ -76,6 +76,125 @@ pub fn parse_repeater(s: &str) -> Option<Repeater> {
     })
 }
 
+/// Preference for closest date calculation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DatePreference {
+    Past,   // Return date <= current
+    Future, // Return date >= current
+}
+
+/// Calculate closest date to current starting from base_date (org-mode logic)
+pub fn closest_date(base_date: NaiveDate, current: NaiveDate, prefer: DatePreference, repeater: &Repeater) -> Option<NaiveDate> {
+    use chrono::Datelike;
+    
+    // If current <= base_date, return base_date
+    if current <= base_date {
+        return Some(base_date);
+    }
+    
+    match repeater.unit {
+        RepeaterUnit::Year => {
+            let value = repeater.value as i32;
+            let base_month = base_date.month();
+            let base_day = base_date.day();
+            let base_year = base_date.year();
+            let current_year = current.year();
+            
+            // Calculate complete years to current
+            let years_diff = current_year - base_year;
+            let complete_years = (years_diff / value) * value;
+            
+            // n1: closest date before or equal to current
+            let year1 = base_year + complete_years;
+            let n1 = NaiveDate::from_ymd_opt(year1, base_month, base_day.min(days_in_month(year1, base_month)))?;
+            
+            // n2: closest date after current
+            let year2 = year1 + value;
+            let n2 = NaiveDate::from_ymd_opt(year2, base_month, base_day.min(days_in_month(year2, base_month)))?;
+            
+            match prefer {
+                DatePreference::Past => if current >= n2 { Some(n2) } else { Some(n1) },
+                DatePreference::Future => if current <= n1 { Some(n1) } else { Some(n2) },
+            }
+        }
+        RepeaterUnit::Month => {
+            let months_to_add = repeater.value as i32;
+            let base_day = base_date.day();
+            
+            // Calculate complete months to current
+            let months_diff = (current.year() - base_date.year()) * 12 + (current.month() as i32 - base_date.month() as i32);
+            let complete_months = (months_diff / months_to_add) * months_to_add;
+            
+            // n1: closest date before or equal to current
+            let n1 = add_months(base_date, complete_months)?;
+            let n1 = NaiveDate::from_ymd_opt(n1.year(), n1.month(), base_day.min(days_in_month(n1.year(), n1.month())))?;
+            
+            // n2: closest date after current
+            let n2 = add_months(n1, months_to_add)?;
+            
+            match prefer {
+                DatePreference::Past => if current >= n2 { Some(n2) } else { Some(n1) },
+                DatePreference::Future => if current <= n1 { Some(n1) } else { Some(n2) },
+            }
+        }
+        RepeaterUnit::Day | RepeaterUnit::Week => {
+            let days = match repeater.unit {
+                RepeaterUnit::Day => repeater.value as i64,
+                RepeaterUnit::Week => (repeater.value * 7) as i64,
+                _ => unreachable!(),
+            };
+            
+            let days_diff = (current - base_date).num_days();
+            let complete_periods = days_diff / days;
+            
+            // n1: closest date before or equal to current
+            let n1 = base_date + chrono::Duration::days(complete_periods * days);
+            
+            // n2: closest date after current
+            let n2 = n1 + chrono::Duration::days(days);
+            
+            match prefer {
+                DatePreference::Past => if current >= n2 { Some(n2) } else { Some(n1) },
+                DatePreference::Future => if current <= n1 { Some(n1) } else { Some(n2) },
+            }
+        }
+        RepeaterUnit::Workday => {
+            let calendar = HolidayCalendar::load().ok()?;
+            
+            // Find n1 (last workday occurrence <= current)
+            let mut n1 = base_date;
+            let mut count = 0u32;
+            
+            while n1 < current {
+                let next = calendar.next_workday(n1);
+                if next > current {
+                    break;
+                }
+                n1 = next;
+                count += 1;
+                if count >= repeater.value {
+                    count = 0;
+                }
+            }
+            
+            // Find n2 (next workday occurrence > current)
+            let mut n2 = if n1 == current { n1 } else { current };
+            for _ in 0..repeater.value {
+                n2 = calendar.next_workday(n2);
+            }
+            
+            match prefer {
+                DatePreference::Past => if current >= n2 { Some(n2) } else { Some(n1) },
+                DatePreference::Future => if current <= n1 { Some(n1) } else { Some(n2) },
+            }
+        }
+        RepeaterUnit::Hour => {
+            // For hour repeaters, treat as daily
+            Some(current)
+        }
+    }
+}
+
 /// Calculate next occurrence date for a repeater
 pub fn next_occurrence(base_date: NaiveDate, repeater: &Repeater, from_date: NaiveDate) -> Option<NaiveDate> {
     use chrono::Datelike;
