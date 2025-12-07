@@ -302,6 +302,7 @@ fn handle_repeating_task(
     }
 }
 
+#[allow(dead_code)]
 fn find_last_occurrence_before(base_date: NaiveDate, repeater: &crate::timestamp::Repeater, before_date: NaiveDate) -> Option<NaiveDate> {
     use crate::timestamp::RepeaterUnit;
     
@@ -375,6 +376,7 @@ fn find_last_occurrence_before(base_date: NaiveDate, repeater: &crate::timestamp
     }
 }
 
+#[allow(dead_code)]
 fn is_occurrence_day(base_date: NaiveDate, repeater: &crate::timestamp::Repeater, check_date: NaiveDate) -> bool {
     use crate::timestamp::RepeaterUnit;
     

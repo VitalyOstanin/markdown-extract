@@ -196,6 +196,7 @@ pub fn closest_date(base_date: NaiveDate, current: NaiveDate, prefer: DatePrefer
 }
 
 /// Calculate next occurrence date for a repeater
+#[allow(dead_code)]
 pub fn next_occurrence(base_date: NaiveDate, repeater: &Repeater, from_date: NaiveDate) -> Option<NaiveDate> {
     use chrono::Datelike;
     
